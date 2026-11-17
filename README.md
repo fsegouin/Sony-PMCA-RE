@@ -46,7 +46,7 @@ Sony cameras can boot from a secondary partition for firmware updates. Using a c
 
 This mode does not require any special drivers, the operating system's mass storage USB driver is enough.
 
-A list of supported camera models can be found [here](https://openmemories.readthedocs.io/devices.html). Devices based on the CXD90045 and CXD90057 architectures are not compatible, since their firmware is cryptographically signed.
+A list of supported camera models can be found [here](https://openmemories.readthedocs.io/devices.html). Devices based on the CXD90045 and CXD90057 architectures are not compatible, since their firmware is cryptographically signed. A model that is not listed may still work if it shares its model id with a listed one (regional variants and sister models often do): the camera is asked which of the bundled firmware files it accepts before anything is written.
 
 There are two ways to use this:
 * **pmca-gui**: In the *Tweaks* tab, click *Start tweaking (updater mode)*. You can then use the checkboxes to configure your camera's settings.

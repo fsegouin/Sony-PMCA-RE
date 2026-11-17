@@ -333,9 +333,36 @@ def getFdat(device):
  while device != '' and not device[-1:].isdigit() and device not in fdats:
   device = device[:-1]
  if device in fdats:
-  hdrFile, payloadFile = fdats[device]
-  with open(hdrFile, 'rb') as hdr, open(payloadFile, 'rb') as payload:
-   return hdr.read() + payload.read()
+  return readFdat(*fdats[device])
+
+
+def readFdat(hdrFile, payloadFile):
+ with open(hdrFile, 'rb') as hdr, open(payloadFile, 'rb') as payload:
+  return hdr.read() + payload.read()
+
+
+def getDistinctFdats():
+ """Yields every bundled firmware once. Models with the same id share their firmware."""
+ seen = set()
+ for model, files in sorted(getFdats()):
+  fdat = readFdat(*files)
+  if fdat not in seen:
+   seen.add(fdat)
+   yield model, fdat
+
+
+def findAcceptedFirmware(device, files):
+ """Returns the first (name, data) firmware which passes the guard check of the camera. Nothing is written."""
+ wrongFile = {SonyUpdaterCamera.STAT_INVALID_DATA, SonyUpdaterCamera.STAT_INVALID_MODEL, SonyUpdaterCamera.STAT_INVALID_REGION}
+ dev = SonyUpdaterCamera(device)
+ for name, data in files:
+  try:
+   dev.init()
+   dev.checkGuard(io.BytesIO(data), len(data))
+   return name, data
+  except SonyUpdaterStatusError as e:
+   if not wrongFile.intersection(e.status):
+    raise
 
 
 def firmwareUpdateCommand(file, driverName=None):
@@ -354,17 +381,28 @@ def updaterShellCommand(model=None, fdatFile=None, driverName=None, complete=Non
    if fdatFile:
     fdat = fdatFile.read()
    else:
-    if not model:
+    if model:
+     fdat = getFdat(model)
+    else:
      print('Getting device info')
      try:
       model = SonyExtCmdCamera(device).getCameraInfo().modelName
      except:
       print('Error: Cannot determine camera model')
       return
-     print('Using firmware for model %s' % model)
+
+     fdat = getFdat(model)
+     if fdat:
+      print('Using firmware for model %s' % model)
+     else:
+      # Unlisted models often share the id of a listed one. The camera tells us which firmware it accepts.
+      print('Model %s is not listed. Looking for a listed model with the same id...' % model)
+      match = findAcceptedFirmware(device, getDistinctFdats())
+      if match:
+       print('Using firmware for model %s' % match[0])
+       fdat = match[1]
      print('')
 
-    fdat = getFdat(model)
     if not fdat:
      print('Error: Model "%s" does not support custom firmware updates. Please check the compatibility list.' % model)
      return
@@ -436,24 +474,18 @@ def guessFirmwareCommand(file, driverName=None):
    print('Model name: %s' % model)
    print('')
 
-   dev = SonyUpdaterCamera(device)
    with zipfile.ZipFile(file) as zip:
     infos = zip.infolist()
     print('Trying %d firmware images' % len(infos))
-    for info in infos:
-     data = zip.read(info)
-     try:
-      dev.init()
-      dev.checkGuard(io.BytesIO(data), len(data))
-      break
-     except Exception as e:
-      if 'Invalid model' not in str(e):
-       print(e)
-       break
-    else:
-     print('Fail: No matching file found')
+    try:
+     match = findAcceptedFirmware(device, ((info.filename, zip.read(info)) for info in infos))
+    except SonyUpdaterStatusError as e:
+     print(e)
      return
-    print('Success: Found matching file: %s' % info.filename)
+   if match:
+    print('Success: Found matching file: %s' % match[0])
+   else:
+    print('Fail: No matching file found')
 
 
 def gpsUpdateCommand(file=None, driverName=None):

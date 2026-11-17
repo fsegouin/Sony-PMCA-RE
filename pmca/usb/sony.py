@@ -414,6 +414,13 @@ class SonyUpdaterSequenceError(Exception):
   Exception.__init__(self, 'Wrong updater command sequence')
 
 
+class SonyUpdaterStatusError(Exception):
+ """Raised when the camera rejects updater data. status contains the reported status codes."""
+ def __init__(self, status, message):
+  super(SonyUpdaterStatusError, self).__init__(message)
+  self.status = status
+
+
 class SonyUpdaterCamera(object):
  """Methods to send updater commands to a camera"""
 
@@ -531,7 +538,7 @@ class SonyUpdaterCamera(object):
    if status == [self.STAT_OK]:
     break
    elif status != [self.STAT_BUSY]:
-    raise Exception('Firmware update error: ' + ', '.join([self._statusToStr(s) for s in status if s != self.STAT_OK]))
+    raise SonyUpdaterStatusError(status, 'Firmware update error: ' + ', '.join([self._statusToStr(s) for s in status if s != self.STAT_OK]))
 
  def _parseWriteResponse(self, data):
   response = self.WriteResponse.unpack(data)
