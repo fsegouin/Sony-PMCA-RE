@@ -351,18 +351,28 @@ def getDistinctFdats():
    yield model, fdat
 
 
-def findAcceptedFirmware(device, files):
- """Returns the first (name, data) firmware which passes the guard check of the camera. Nothing is written."""
- wrongFile = {SonyUpdaterCamera.STAT_INVALID_DATA, SonyUpdaterCamera.STAT_INVALID_MODEL, SonyUpdaterCamera.STAT_INVALID_REGION}
+def findFirmwareForModel(device, files):
+ """Returns (name, data, error) for the firmware whose model id the camera accepts. Nothing is written.
+ A firmware which passes the guard check is preferred, and error is None for it. Otherwise, the first firmware
+ the camera rejected after the model check is returned, with error set to that rejection."""
+ otherModel = {SonyUpdaterCamera.STAT_INVALID_DATA, SonyUpdaterCamera.STAT_INVALID_MODEL}
+ sameModel = {SonyUpdaterCamera.STAT_INVALID_REGION, SonyUpdaterCamera.STAT_INVALID_VERSION}
+ rejected = None
  dev = SonyUpdaterCamera(device)
  for name, data in files:
   try:
    dev.init()
    dev.checkGuard(io.BytesIO(data), len(data))
-   return name, data
+   return name, data, None
   except SonyUpdaterStatusError as e:
-   if not wrongFile.intersection(e.status):
-    raise
+   if otherModel.intersection(e.status):
+    continue
+   if sameModel.intersection(e.status):
+    if not rejected:
+     rejected = name, data, e
+    continue
+   raise
+ return rejected
 
 
 def firmwareUpdateCommand(file, driverName=None):
@@ -397,10 +407,15 @@ def updaterShellCommand(model=None, fdatFile=None, driverName=None, complete=Non
      else:
       # Unlisted models often share the id of a listed one. The camera tells us which firmware it accepts.
       print('Model %s is not listed. Looking for a listed model with the same id...' % model)
-      match = findAcceptedFirmware(device, getDistinctFdats())
+      match = findFirmwareForModel(device, getDistinctFdats())
       if match:
-       print('Using firmware for model %s' % match[0])
-       fdat = match[1]
+       name, data, error = match
+       if error:
+        print('Error: Model %s has the same id, but the camera rejected its firmware (%s)' % (name, error))
+        return
+       else:
+        print('Using firmware for model %s' % name)
+        fdat = data
      print('')
 
     if not fdat:
@@ -478,12 +493,15 @@ def guessFirmwareCommand(file, driverName=None):
     infos = zip.infolist()
     print('Trying %d firmware images' % len(infos))
     try:
-     match = findAcceptedFirmware(device, ((info.filename, zip.read(info)) for info in infos))
+     match = findFirmwareForModel(device, ((info.filename, zip.read(info)) for info in infos))
     except SonyUpdaterStatusError as e:
      print(e)
      return
    if match:
-    print('Success: Found matching file: %s' % match[0])
+    name, data, error = match
+    if error:
+     print(error)
+    print('Success: Found matching file: %s' % name)
    else:
     print('Fail: No matching file found')
 
